@@ -1,7 +1,9 @@
+import pandas as pd
 import streamlit as st
 
 from agents.broker_orchestrator import run_broker_workflow
 from brokers.alpaca_client import check_alpaca_connection
+from database.trade_history import save_workflow_run, get_recent_workflow_runs
 
 st.set_page_config(
     page_title="AI Broker Desk",
@@ -236,6 +238,20 @@ with st.sidebar:
     st.code("Analyse Microsoft")
     st.code("Need 100 Tesla around market")
 
+    st.divider()
+
+    st.subheader("Recent Runs")
+
+    recent_runs = get_recent_workflow_runs(limit=5)
+
+    if recent_runs:
+        for run in recent_runs:
+            st.caption(
+                f"#{run['id']} | {run['ticker']} | {run['strategy_signal']} | {run['risk_approval']} | {run['execution_status']}"
+            )
+    else:
+        st.caption("No saved runs yet.")
+
 st.markdown('<div class="section-title">Broker Request</div>', unsafe_allow_html=True)
 
 with st.form("broker_request_form"):
@@ -251,11 +267,17 @@ if run_button:
         st.error("Please enter a broker request first.")
     else:
         with st.spinner("Broker Orchestrator is running the agent workflow..."):
-            st.session_state["workflow_result"] = run_broker_workflow(
+            workflow_result = run_broker_workflow(
                 query=query,
                 submit_paper_order=submit_paper_order
-            )
+        )
 
+            run_id = save_workflow_run(workflow_result)
+
+            workflow_result["database_run_id"] = run_id
+
+            st.session_state["workflow_result"] = workflow_result
+            st.success(f"Workflow saved to history. Run ID: {run_id}")
 
 workflow_result = st.session_state.get("workflow_result")
 
@@ -330,7 +352,7 @@ if workflow_result:
 
     st.divider()
 
-    tab_market, tab_news, tab_strategy, tab_risk, tab_execution, tab_audit, tab_raw = st.tabs(
+    tab_market, tab_news, tab_strategy, tab_risk, tab_execution, tab_audit, tab_history, tab_raw = st.tabs(
         [
             "Market",
             "News",
@@ -338,6 +360,7 @@ if workflow_result:
             "Risk",
             "Execution",
             "Audit Trail",
+            "History",
             "Raw Output"
         ]
     )
@@ -517,6 +540,41 @@ if workflow_result:
                 st.write(f"• {event}")
         else:
             st.info("No audit events available.")
+
+    with tab_history:
+        st.subheader("Workflow History")
+
+        history_rows = get_recent_workflow_runs(limit=20)
+
+        if history_rows:
+            history_df = pd.DataFrame(history_rows)
+
+            display_df = history_df.rename(
+                columns={
+                    "id": "Run ID",
+                    "created_at": "Created At",
+                    "query": "Query",
+                    "ticker": "Ticker",
+                    "side": "Side",
+                    "requested_quantity": "Requested Qty",
+                    "approved_quantity": "Approved Qty",
+                    "strategy_signal": "Strategy Signal",
+                    "confidence": "Confidence",
+                    "risk_approval": "Risk Approval",
+                    "risk_level": "Risk Level",
+                    "execution_status": "Execution Status",
+                    "order_id": "Order ID",
+                }
+            )
+
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+            st.info(
+                "This table stores recent broker workflow runs locally in SQLite. "
+                "Paper orders only appear with an Order ID when paper execution is enabled and Alpaca accepts the order."
+            )
+        else:
+            st.info("No workflow history has been saved yet.")
 
     with tab_raw:
         st.subheader("Raw Workflow Output")
