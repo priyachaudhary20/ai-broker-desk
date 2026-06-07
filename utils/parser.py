@@ -31,3 +31,22 @@ def extract_ticker(query: str) -> str:
         return possible_tickers[0]
 
     return "AAPL"
+
+def extract_quantity(query: str) -> int:
+    numbers = re.findall(r"\b\d+\b", query)
+
+    if numbers:
+        return int(numbers[0])
+
+    return 10
+
+def extract_side(query: str) -> str:
+    query_lower = query.lower()
+
+    if any(word in query_lower for word in ["sell", "short", "exit"]):
+        return "SELL"
+
+    if any(word in query_lower for word in ["buy", "long", "need", "purchase"]):
+        return "BUY"
+
+    return "ANALYSE"

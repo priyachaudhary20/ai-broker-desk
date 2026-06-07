@@ -67,7 +67,7 @@ def run_strategy_agent(market_data: dict, news_data: dict) -> dict:
         else:
             reasons.append("Daily movement is high, so trade should be avoided")
 
-        reason_text = " + ".join(reasons)
+        reason_text = ". ".join(reasons) + "."
 
         return {
             "agent": "Strategy Agent",
