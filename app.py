@@ -3,7 +3,7 @@ import streamlit as st
 from utils.parser import extract_ticker
 from agents.market_agent import run_market_agent
 from agents.news_agent import run_news_agent
-
+from agents.strategy_agent import run_strategy_agent
 
 st.set_page_config(
     page_title="AI Broker Desk",
@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("📈 AI Broker Desk")
-st.caption("Phase 2: Market Agent + News Agent")
+st.caption("Phase 3: Market Agent + News Agent + Strategy Agent")
 
 st.warning(
     "Demo only. This app does not provide financial advice and does not execute real trades."
@@ -37,9 +37,27 @@ if st.button("Run Agents", type="primary"):
         with st.spinner("News Agent is analysing recent headlines..."):
             news_result = run_news_agent(ticker)
 
+        if market_result["status"] == "complete" and news_result["status"] == "complete":
+            with st.spinner("Strategy Agent is evaluating entry conditions..."):
+                strategy_result = run_strategy_agent(
+                    market_result["data"],
+                    news_result["data"]
+                )
+        else:
+            strategy_result = {
+                "agent": "Strategy Agent",
+                "status": "blocked",
+                "summary": "Strategy Agent blocked because Market or News Agent failed.",
+                "data": {
+                    "signal": "HOLD",
+                    "confidence": 50,
+                    "reason": "Insufficient data for strategy decision.",
+                },
+            }
+
         st.subheader("🤖 Agent Activity Panel")
 
-        col_a, col_b = st.columns(2)
+        col_a, col_b, col_c = st.columns(3)
 
         with col_a:
             if market_result["status"] == "complete":
@@ -56,6 +74,14 @@ if st.button("Run Agents", type="primary"):
             else:
                 st.error("News Agent failed ❌")
                 st.write(news_result["summary"])
+
+        with col_c:
+            if strategy_result["status"] == "complete":
+                st.success("Strategy Agent complete ✅")
+                st.write(strategy_result["summary"])
+            else:
+                st.warning("Strategy Agent blocked ⚠️")
+                st.write(strategy_result["summary"])
 
         st.divider()
 
@@ -113,9 +139,39 @@ if st.button("Run Agents", type="primary"):
 
         st.divider()
 
+        st.subheader("🧠 Strategy / Entry Decision")
+
+        strategy_data = strategy_result["data"]
+
+        col6, col7, col8 = st.columns(3)
+
+        with col6:
+            st.metric("Entry Signal", strategy_data.get("signal", "HOLD"))
+
+        with col7:
+            st.metric("Confidence", f"{strategy_data.get('confidence', 50)}%")
+
+        with col8:
+            st.metric("Volatility", strategy_data.get("volatility_status", "Unknown"))
+
+        st.write("**Reason:**")
+        st.info(strategy_data.get("reason", "No reason available."))
+
+        st.write("**Strategy Breakdown:**")
+        st.write(f"- Trend: {strategy_data.get('trend', 'Unknown')}")
+        st.write(f"- Trend Score: {strategy_data.get('trend_score', 'N/A')}/100")
+        st.write(f"- Sentiment: {strategy_data.get('sentiment', 'Unknown')}")
+        st.write(f"- Sentiment Score: {strategy_data.get('sentiment_score', 'N/A')}/100")
+        st.write(f"- Daily Change: {strategy_data.get('daily_change_pct', 'N/A')}%")
+
+        st.divider()
+
         with st.expander("Raw Agent Outputs"):
             st.write("Market Agent Output")
             st.json(market_result)
 
             st.write("News Agent Output")
             st.json(news_result)
+
+            st.write("Strategy Agent Output")
+            st.json(strategy_result)
