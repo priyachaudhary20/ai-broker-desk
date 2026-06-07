@@ -1,3 +1,6 @@
+BUY_CONFIDENCE_THRESHOLD = 65
+AVOID_CONFIDENCE_THRESHOLD = 40
+
 def run_strategy_agent(market_data: dict, news_data: dict) -> dict:
     """
     Strategy Agent decides whether conditions suggest BUY, HOLD, or AVOID.
@@ -37,9 +40,17 @@ def run_strategy_agent(market_data: dict, news_data: dict) -> dict:
             + (volatility_score * 0.15)
         )
 
-        if confidence >= 70 and trend == "Bullish" and sentiment in ["Positive", "Neutral"]:
+        if (
+            confidence >= BUY_CONFIDENCE_THRESHOLD
+            and trend == "Bullish"
+            and sentiment in ["Positive", "Neutral"]
+        ):
             signal = "BUY"
-        elif confidence <= 40 or trend == "Bearish" or sentiment == "Negative":
+        elif (
+            confidence <= AVOID_CONFIDENCE_THRESHOLD
+            or trend == "Bearish"
+            or sentiment == "Negative"
+        ):
             signal = "AVOID"
         else:
             signal = "HOLD"
@@ -72,7 +83,7 @@ def run_strategy_agent(market_data: dict, news_data: dict) -> dict:
         return {
             "agent": "Strategy Agent",
             "status": "complete",
-            "summary": f"{ticker} strategy signal is {signal} with {confidence}% confidence.",
+            "summary": f"{ticker} strategy signal is {signal} with {confidence}% confidence. Buy threshold: {BUY_CONFIDENCE_THRESHOLD}%.",
             "data": {
                 "ticker": ticker,
                 "signal": signal,

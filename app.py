@@ -5,6 +5,8 @@ from agents.market_agent import run_market_agent
 from agents.news_agent import run_news_agent
 from agents.strategy_agent import run_strategy_agent
 from agents.risk_agent import run_risk_agent
+from agents.execution_agent import run_execution_agent
+from brokers.alpaca_client import check_alpaca_connection
 
 st.set_page_config(
     page_title="AI Broker Desk",
@@ -13,11 +15,29 @@ st.set_page_config(
 )
 
 st.title("📈 AI Broker Desk")
-st.caption("Phase 4: Market + News + Strategy + Risk Agents")
+st.caption("Phase 5: Market + News + Strategy + Risk + Alpaca Paper Execution")
 
 st.warning(
     "Demo only. This app does not provide financial advice and does not execute real trades."
 )
+
+with st.sidebar:
+    st.subheader("Execution Settings")
+    st.write("Mode: **Alpaca Paper Trading**")
+    st.write("Live Trading: **Disabled**")
+    st.write("Real Money: **No**")
+
+    if st.button("Check Alpaca Connection"):
+        connection = check_alpaca_connection()
+
+        if connection["status"] == "connected":
+            st.success("Alpaca connected ✅")
+            st.write(f"Account Status: {connection['account_status']}")
+            st.write(f"Buying Power: ${connection['buying_power']}")
+            st.write(f"Cash: ${connection['cash']}")
+        else:
+            st.error("Alpaca connection failed ❌")
+            st.write(connection["message"])
 
 query = st.text_input(
     "Enter your broker request:",
@@ -80,9 +100,12 @@ if st.button("Run Agents", type="primary"):
                 },
             }
 
+        with st.spinner("Execution Agent is processing the paper order..."):
+            execution_result = run_execution_agent(risk_result["data"])
+
         st.subheader("🤖 Agent Activity Panel")
 
-        col_a, col_b, col_c, col_d = st.columns(4)
+        col_a, col_b, col_c, col_d, col_e = st.columns(5)
 
         with col_a:
             if market_result["status"] == "complete":
@@ -115,6 +138,17 @@ if st.button("Run Agents", type="primary"):
             else:
                 st.warning("Risk Agent ⚠️")
                 st.write(risk_result["summary"])
+
+        with col_e:
+            if execution_result["status"] == "complete":
+                st.success("Execution Agent ✅")
+                st.write(execution_result["summary"])
+            elif execution_result["status"] == "blocked":
+                st.warning("Execution Agent ⚠️")
+                st.write(execution_result["summary"])
+            else:
+                st.error("Execution Agent ❌")
+                st.write(execution_result["summary"])
 
         st.divider()
 
@@ -231,6 +265,37 @@ if st.button("Run Agents", type="primary"):
 
         st.divider()
 
+        st.subheader("⚡ Paper Execution")
+
+        execution_data = execution_result["data"]
+
+        col16, col17, col18 = st.columns(3)
+
+        with col16:
+            st.metric("Execution Mode", execution_data.get("execution_mode", "Paper"))
+
+        with col17:
+            st.metric("Order Status", execution_data.get("order_status", "N/A"))
+
+        with col18:
+            st.metric("Quantity", execution_data.get("quantity", "N/A"))
+
+        if execution_result["status"] == "complete":
+            st.success("Paper order submitted successfully.")
+            st.write(f"**Order ID:** {execution_data.get('order_id')}")
+            st.write(f"**Client Order ID:** {execution_data.get('client_order_id')}")
+            st.write(f"**Ticker:** {execution_data.get('ticker')}")
+            st.write(f"**Side:** {execution_data.get('side')}")
+            st.write(f"**Order Type:** {execution_data.get('order_type')}")
+            st.write(f"**Time in Force:** {execution_data.get('time_in_force')}")
+            st.write(f"**Submitted At:** {execution_data.get('submitted_at')}")
+        elif execution_result["status"] == "blocked":
+            st.warning(execution_data.get("reason", "Execution was blocked."))
+        else:
+            st.error(execution_data.get("reason", "Execution failed."))
+
+        st.divider()
+
         with st.expander("Raw Agent Outputs"):
             st.write("Market Agent Output")
             st.json(market_result)
@@ -243,3 +308,6 @@ if st.button("Run Agents", type="primary"):
 
             st.write("Risk Agent Output")
             st.json(risk_result)
+
+            st.write("Execution Agent Output")
+            st.json(execution_result)
