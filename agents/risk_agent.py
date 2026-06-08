@@ -33,11 +33,11 @@ def run_risk_agent(
             return {
                 "agent": "Risk Agent",
                 "status": "blocked",
-                "summary": "Risk Agent blocked the trade because price data is unavailable.",
+                "summary": "Risk Agent held the ticket because valid price data was unavailable for pre-trade review.",
                 "data": {
                     "approval": "Blocked",
                     "risk_level": "High",
-                    "reason": "Price data is unavailable.",
+                    "reason": "No valid latest price was available, so the order cannot be assessed against notional and risk limits.",
                 },
             }
 
@@ -74,34 +74,34 @@ def run_risk_agent(
         if side == "ANALYSE":
             approval = "Blocked"
             reasons.append(
-                "No trade direction was detected. This request has been treated as analysis only."
+                "No executable side was detected. The instruction has been treated as an analysis-only request."
             )
 
         if signal != "BUY":
             approval = "Blocked"
             reasons.append(
-                f"The strategy signal is {signal}. Execution is not recommended."
+                f"Strategy Agent returned a {signal} signal. The ticket is not recommended for execution under the current desk rules."
             )
 
         if confidence < MIN_CONFIDENCE_FOR_TRADE:
             approval = "Blocked"
             reasons.append(
-                f"Strategy confidence is below the required {MIN_CONFIDENCE_FOR_TRADE}% threshold."
+                f"Strategy confidence is below the required {MIN_CONFIDENCE_FOR_TRADE}% execution threshold."
             )
 
         if volatility_status == "High":
             approval = "Blocked"
             reasons.append(
-                "Market volatility is high. The trade has been blocked for risk control."
+                "Market volatility is high. The ticket has been blocked by pre-trade risk controls."
             )
 
         if approval == "Approved":
-            reasons.append("The trade passes demo risk checks.")
+            reasons.append("The ticket passes pre-trade risk controls for this paper-trading workflow.")
 
         if requested_quantity > approved_quantity:
             reasons.append(
-                f"The requested quantity was reduced from {requested_quantity} to {approved_quantity} to stay within the demo risk limit."
-                )
+                f"Order size was adjusted from {requested_quantity} to {approved_quantity} shares to remain within the paper notional limit."
+            )
 
         if approval == "Approved" and requested_quantity > approved_quantity:
             approval = "Approved with Adjustment"
@@ -109,12 +109,12 @@ def run_risk_agent(
         if risk_level == "High":
             approval = "Blocked"
             reasons.append(
-                "The risk level is high. The trade has been blocked."
+                "Overall risk level is High. The ticket has been blocked before execution."
             )
 
         if not reasons:
             reasons.append(
-                "The proposed trade passes all demo risk checks."
+                "The proposed ticket passes all configured pre-trade risk checks."
             )
 
         reason_text = " ".join(reasons)
@@ -122,7 +122,7 @@ def run_risk_agent(
         return {
             "agent": "Risk Agent",
             "status": "complete",
-            "summary": f"{ticker} risk status: {approval}. Risk level: {risk_level}.",
+            "summary": f"Risk Agent review for {ticker}: {approval}. Risk level: {risk_level}; approved size: {approved_quantity} share(s); estimated notional: ${notional:.2f}.",
             "data": {
                 "ticker": ticker,
                 "side": side,
@@ -146,10 +146,10 @@ def run_risk_agent(
         return {
             "agent": "Risk Agent",
             "status": "error",
-            "summary": f"Risk Agent failed: {str(e)}",
+            "summary": f"Risk Agent could not complete the pre-trade review: {str(e)}",
             "data": {
                 "approval": "Blocked",
                 "risk_level": "High",
-                "reason": "Risk assessment failed. The trade has been blocked by default.",
+                "reason": "Pre-trade risk assessment could not be completed. The ticket has been blocked by default.",
             },
         }

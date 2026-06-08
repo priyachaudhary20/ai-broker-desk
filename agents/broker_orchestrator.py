@@ -12,7 +12,7 @@ def build_disabled_execution_result(reason: str) -> dict:
     return {
         "agent": "Execution Agent",
         "status": "disabled",
-        "summary": "Execution Agent did not submit an order because paper execution is disabled.",
+        "summary": "Execution Agent held the ticket because paper execution is disabled for this run.",
         "data": {
             "execution_mode": "Alpaca Paper Trading",
             "order_status": "Not Submitted",
@@ -37,27 +37,30 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
 
     audit_log = []
 
-    add_audit_event(audit_log, "User request received.")
+    add_audit_event(audit_log, "Client instruction received by Broker Orchestrator.")
 
     ticker = extract_ticker(query)
     requested_quantity = extract_quantity(query)
     side = extract_side(query)
 
+    if side == "ANALYSE":
+        requested_quantity = 0
+
     add_audit_event(
         audit_log,
-        f"Request parsed as {side} {requested_quantity} {ticker}."
+        f"Instruction normalised as {side} {requested_quantity} shares of {ticker}."
     )
 
     market_result = run_market_agent(ticker)
     add_audit_event(
         audit_log,
-        f"Market Agent finished with status: {market_result.get('status')}."
+        f"Market Agent completed market data review with status: {market_result.get('status')}."
     )
 
     news_result = run_news_agent(ticker)
     add_audit_event(
         audit_log,
-        f"News Agent finished with status: {news_result.get('status')}."
+        f"News Agent completed sentiment and headline review with status: {news_result.get('status')}."
     )
 
     if market_result["status"] == "complete" and news_result["status"] == "complete":
@@ -67,22 +70,22 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
         )
         add_audit_event(
             audit_log,
-            f"Strategy Agent generated signal: {strategy_result['data'].get('signal', 'Unknown')}."
+            f"Strategy Agent generated desk signal: {strategy_result['data'].get('signal', 'Unknown')}."
         )
     else:
         strategy_result = {
             "agent": "Strategy Agent",
             "status": "blocked",
-            "summary": "Strategy Agent was blocked because market or news data was unavailable.",
+            "summary": "Strategy Agent held the recommendation because required market or news inputs were unavailable.",
             "data": {
                 "signal": "HOLD",
                 "confidence": 50,
-                "reason": "There is insufficient data to make a strategy decision.",
+                "reason": "Insufficient input coverage. The desk signal defaults to HOLD until market and news data are available.",
             },
         }
         add_audit_event(
             audit_log,
-            "Strategy Agent was blocked because required data was unavailable."
+            "Strategy Agent was held because required market or news inputs were unavailable."
         )
 
     if strategy_result["status"] == "complete":
@@ -94,22 +97,23 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
         )
         add_audit_event(
             audit_log,
-            f"Risk Agent returned approval status: {risk_result['data'].get('approval', 'Unknown')}."
+            f"Risk Agent completed pre-trade review with approval status: {risk_result['data'].get('approval', 'Unknown')}."
         )
     else:
         risk_result = {
             "agent": "Risk Agent",
             "status": "blocked",
-            "summary": "Risk Agent was blocked because the strategy decision was unavailable.",
+            "summary": "Risk Agent held the ticket because no valid strategy decision was available.",
             "data": {
                 "approval": "Blocked",
                 "risk_level": "High",
-                "reason": "Strategy data is unavailable. The trade has been blocked.",
+                "reason": "No strategy signal was available for pre-trade review. The order remains blocked.",
+
             },
         }
         add_audit_event(
             audit_log,
-            "Risk Agent was blocked because the strategy decision was unavailable."
+            "Risk Agent was held because no valid strategy decision was available for review."
         )
 
     if submit_paper_order:
@@ -121,33 +125,33 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
 
             add_audit_event(
                 audit_log,
-                f"Execution Agent submitted paper order. Status: {order_status}. Order ID: {order_id}."
+                f"Execution Agent routed Alpaca paper order. Venue status: {order_status}. Order ID: {order_id}."
             )
 
             if order_status in ["accepted", "new"]:
                 add_audit_event(
                     audit_log,
-                    "Order was accepted by Alpaca. It may remain pending until the US market opens."
+                    "Alpaca accepted the paper order. The order may remain queued until the US market session opens."
                 )
 
         elif execution_result["status"] == "blocked":
             add_audit_event(
                 audit_log,
-                "Execution Agent blocked the order because execution conditions were not met."
+                "Execution Agent did not route the order because execution conditions were not satisfied."
             )
         else:
             add_audit_event(
                 audit_log,
-                "Execution Agent failed while processing the paper order."
+                "Execution Agent encountered an issue while processing the Alpaca paper order."
             )
 
     else:
         execution_result = build_disabled_execution_result(
-            "Paper execution is disabled in the app. Enable it from the sidebar to submit a paper order."
+            "Paper execution is disabled. Enable Alpaca paper execution from the sidebar before routing an order."
         )
         add_audit_event(
             audit_log,
-            "Execution Agent was skipped because paper execution is disabled."
+            "Execution Agent was held because paper execution is disabled in the sidebar."
         )
 
     final_decision = {
@@ -160,7 +164,7 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
         "execution_status": execution_result["data"].get("order_status", "Not Submitted"),
     }
 
-    add_audit_event(audit_log, "Broker workflow completed.")
+    add_audit_event(audit_log, "Broker workflow completed and final decision summary generated.")
 
     return {
         "query": query,

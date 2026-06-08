@@ -134,7 +134,7 @@ def run_news_agent(ticker: str) -> dict:
             return {
                 "agent": "News Agent",
                 "status": "complete",
-                "summary": f"No recent headlines found for {ticker}. Sentiment treated as Neutral.",
+                "summary": f"News Agent found no recent headlines for {ticker}. Headline sentiment is treated as Neutral for this run.",
                 "data": {
                     "ticker": ticker,
                     "sentiment": "Neutral",
@@ -157,7 +157,7 @@ def run_news_agent(ticker: str) -> dict:
         return {
             "agent": "News Agent",
             "status": "complete",
-            "summary": f"{ticker} news sentiment is {sentiment} with score {sentiment_score}%.",
+            "summary": f"News Agent reads headline tone for {ticker} as {sentiment} with a sentiment score of {sentiment_score}/100 across {len(headlines)} recent headline(s).",
             "data": {
                 "ticker": ticker,
                 "sentiment": sentiment,
@@ -171,7 +171,7 @@ def run_news_agent(ticker: str) -> dict:
         return {
             "agent": "News Agent",
             "status": "error",
-            "summary": f"News Agent failed: {str(e)}",
+            "summary": f"News Agent could not complete the headline review for {ticker}: {str(e)}",
             "data": {
                 "ticker": ticker,
                 "sentiment": "Neutral",

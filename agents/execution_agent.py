@@ -17,11 +17,11 @@ def run_execution_agent(risk_data: dict) -> dict:
             return {
                 "agent": "Execution Agent",
                 "status": "blocked",
-                "summary": "Execution Agent blocked the order because risk approval was not granted.",
+                "summary": "Execution Agent held the order because pre-trade risk approval was not granted.",
                 "data": {
                     "execution_mode": "Alpaca Paper Trading",
                     "order_status": "Blocked",
-                    "reason": "Risk approval is required before execution.",
+                    "reason": "Pre-trade risk approval is required before execution.",
                 },
             }
 
@@ -29,11 +29,11 @@ def run_execution_agent(risk_data: dict) -> dict:
             return {
                 "agent": "Execution Agent",
                 "status": "blocked",
-                "summary": "Execution Agent blocked the order because no valid trade direction was provided.",
+                "summary": "Execution Agent held the order because no executable BUY or SELL side was provided.",
                 "data": {
                     "execution_mode": "Alpaca Paper Trading",
                     "order_status": "Blocked",
-                    "reason": "A valid BUY or SELL direction is required before execution.",
+                    "reason": "The order requires a valid BUY or SELL side before it can be routed.",
                 },
             }
 
@@ -41,11 +41,11 @@ def run_execution_agent(risk_data: dict) -> dict:
             return {
                 "agent": "Execution Agent",
                 "status": "blocked",
-                "summary": "Execution Agent blocked the order because the approved quantity is zero.",
+                "summary": "Execution Agent held the order because the approved quantity was zero.",
                 "data": {
                     "execution_mode": "Alpaca Paper Trading",
                     "order_status": "Blocked",
-                    "reason": "Approved quantity must be greater than zero.",
+                    "reason": "Approved quantity must be greater than zero before the order can be submitted.",
                 },
             }
 
@@ -58,7 +58,7 @@ def run_execution_agent(risk_data: dict) -> dict:
         return {
             "agent": "Execution Agent",
             "status": "complete",
-            "summary": f"Paper order submitted for {approved_quantity} {ticker}.",
+            "summary": f"Execution Agent routed a {side} paper market order for {approved_quantity} share(s) of {ticker} to Alpaca.",
             "data": {
                 "execution_mode": "Alpaca Paper Trading",
                 "order_status": order.get("status"),
@@ -77,10 +77,10 @@ def run_execution_agent(risk_data: dict) -> dict:
         return {
             "agent": "Execution Agent",
             "status": "error",
-            "summary": f"Execution Agent failed: {str(e)}",
+            "summary": f"Execution Agent could not complete paper order routing: {str(e)}",
             "data": {
                 "execution_mode": "Alpaca Paper Trading",
                 "order_status": "Error",
-                "reason": str(e),
+                "reason": f"Alpaca paper order routing failed before confirmation: {str(e)}",
             },
         }

@@ -58,32 +58,32 @@ def run_strategy_agent(market_data: dict, news_data: dict) -> dict:
         reasons = []
 
         if trend == "Bullish":
-            reasons.append("Market trend is bullish, supporting a possible entry")
+            reasons.append("Market structure is bullish, with price action supporting a potential long-side entry")
         elif trend == "Bearish":
-            reasons.append("Market trend is bearish, so entry should be avoided")
+            reasons.append("Market structure is bearish, so the desk should avoid initiating a long-side order")
         else:
-            reasons.append("Market trend is neutral, so there is no strong trend confirmation")
+            reasons.append("Market structure is neutral, with no clear directional confirmation from the moving-average setup")
 
         if sentiment == "Positive":
-            reasons.append("News sentiment is positive, supporting confidence")
+            reasons.append("Headline tone is positive, adding support to the strategy conviction")
         elif sentiment == "Negative":
-            reasons.append("News sentiment is negative, reducing confidence")
+            reasons.append("Headline tone is negative, reducing strategy conviction")
         else:
-            reasons.append("News sentiment is neutral, so there is no strong news catalyst")
+            reasons.append("Headline tone is neutral, with no clear news-driven catalyst identified")
 
         if volatility_status == "Acceptable":
-            reasons.append("Daily movement is acceptable for entry")
+            reasons.append("Short-term price movement is within acceptable range for a paper-trading entry")
         elif volatility_status == "Elevated":
-            reasons.append("Daily movement is elevated, so entry is not ideal yet")
+            reasons.append("Short-term price movement is elevated, so entry conditions are not ideal yet")
         else:
-            reasons.append("Daily movement is high, so trade should be avoided")
+            reasons.append("Short-term price movement is high, so the setup should be avoided under current desk rules")
 
         reason_text = ". ".join(reasons) + "."
 
         return {
             "agent": "Strategy Agent",
             "status": "complete",
-            "summary": f"{ticker} strategy signal is {signal} with {confidence}% confidence. Buy threshold: {BUY_CONFIDENCE_THRESHOLD}%.",
+            "summary": f"Strategy Agent assigns {ticker} a {signal} signal with {confidence}/100 conviction. Buy threshold: {BUY_CONFIDENCE_THRESHOLD}/100.",
             "data": {
                 "ticker": ticker,
                 "signal": signal,
@@ -103,10 +103,10 @@ def run_strategy_agent(market_data: dict, news_data: dict) -> dict:
         return {
             "agent": "Strategy Agent",
             "status": "error",
-            "summary": f"Strategy Agent failed: {str(e)}",
+            "summary": f"Strategy Agent could not complete signal generation: {str(e)}",
             "data": {
                 "signal": "HOLD",
                 "confidence": 50,
-                "reason": "Strategy failed, defaulting to HOLD.",
+                "reason": "Strategy signal generation could not be completed. The desk defaults to HOLD for safety.",
             },
         }

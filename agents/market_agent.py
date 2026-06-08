@@ -1,6 +1,5 @@
 import yfinance as yf
 
-
 def run_market_agent(ticker: str) -> dict:
     try:
         stock = yf.Ticker(ticker)
@@ -10,7 +9,7 @@ def run_market_agent(ticker: str) -> dict:
             return {
                 "agent": "Market Agent",
                 "status": "failed",
-                "summary": f"No market data found for {ticker}.",
+                "summary": f"Market view unavailable for {ticker}. Price history could not be retrieved.",
                 "data": {}
             }
 
@@ -35,10 +34,17 @@ def run_market_agent(ticker: str) -> dict:
             trend = "Neutral"
             trend_score = 55
 
+        if trend == "Bullish":
+            market_comment = "Price is trading above the 20-day and 50-day averages."
+        elif trend == "Bearish":
+            market_comment = "Price is trading below the 20-day and 50-day averages."
+        else:
+            market_comment = "Price action is mixed around the key moving averages."
+
         return {
             "agent": "Market Agent",
             "status": "complete",
-            "summary": f"{ticker} is currently {trend}. Latest price: ${latest_price:.2f}.",
+            "summary": f"{ticker} market view: {trend}. {market_comment}",
             "data": {
                 "ticker": ticker,
                 "latest_price": round(latest_price, 2),
@@ -46,7 +52,8 @@ def run_market_agent(ticker: str) -> dict:
                 "ma20": round(ma20, 2),
                 "ma50": round(ma50, 2),
                 "trend": trend,
-                "trend_score": trend_score
+                "trend_score": trend_score,
+                "market_comment": market_comment
             }
         }
 
@@ -54,6 +61,6 @@ def run_market_agent(ticker: str) -> dict:
         return {
             "agent": "Market Agent",
             "status": "error",
-            "summary": f"Market Agent failed: {str(e)}",
+            "summary": f"Market Agent could not complete the market review for {ticker}: {str(e)}",
             "data": {}
         }
