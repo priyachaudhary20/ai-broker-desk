@@ -1,6 +1,7 @@
 import html
 import pandas as pd
 import streamlit as st
+import yfinance as yf
 
 from agents.broker_orchestrator import run_broker_workflow
 from brokers.alpaca_client import check_alpaca_connection
@@ -1140,12 +1141,39 @@ def sec_div(text):
     )
 
 # ── Ticker items ───────────────────────────────────────────────────────────────
-TICKERS = [
-    ("AAPL","+0.84","up"), ("NVDA","+2.31","up"), ("MSFT","-0.12","down"),
-    ("TSLA","+1.55","up"), ("AMZN","+0.67","up"), ("META","+1.02","up"),
-    ("GOOG","-0.44","down"),("JPM","+0.29","up"), ("SPY","+0.38","up"),
-    ("QQQ","+0.91","up"), ("NFLX","+1.77","up"), ("AMD","-0.53","down"),
-]
+@st.cache_data(ttl=60)
+def get_ticker_band_data():
+    symbols = [
+        "AAPL", "NVDA", "MSFT", "TSLA", "AMZN",
+        "META", "GOOG", "JPM", "NFLX", "AMD",
+        "AVGO", "ORCL", "CRM", "PLTR", "UBER",
+        "COIN", "BA", "GS", "DIS", "IBM",
+    ]
+
+    ticker_rows = []
+
+    for symbol in symbols:
+        try:
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period="5d")
+
+            if len(hist) >= 2:
+                latest_close = float(hist["Close"].iloc[-1])
+                previous_close = float(hist["Close"].iloc[-2])
+                change_pct = ((latest_close - previous_close) / previous_close) * 100
+
+                direction = "up" if change_pct >= 0 else "down"
+                ticker_rows.append((symbol, f"{change_pct:+.2f}", direction))
+            else:
+                ticker_rows.append((symbol, "0.00", "up"))
+
+        except Exception:
+            ticker_rows.append((symbol, "0.00", "up"))
+
+    return ticker_rows
+
+
+TICKERS = get_ticker_band_data()
 
 ticker_html = "&nbsp;&nbsp;<span style='color:rgba(253,249,251,0.18)'>·</span>&nbsp;&nbsp;".join(
     f'<span class="ticker-item"><span class="t-sym">{s}</span>&nbsp;<span class="t-{"up" if d=="up" else "down"}">'
@@ -1185,7 +1213,11 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-st.info("Paper-trading environment only — not investment advice. Orders are routed to Alpaca only when Paper Trading mode is explicitly selected.")
+st.info(
+    "Public demo mode is safe by default. Analysis Only and Demo Execution do not place orders. "
+    "Alpaca Paper Trading requires each user to enter their own Alpaca paper credentials. "
+    "This project is for education and paper-trading only, not investment advice."
+)
 
 # ── Main execution controls ────────────────────────────────────────────────────
 st.markdown(
@@ -1194,9 +1226,9 @@ st.markdown(
         <div class="execution-kicker">Order Routing · Execution Mode</div>
         <div class="execution-title">Select your execution environment</div>
         <div class="execution-copy">
-            Run the full agent pipeline in dry-run mode to analyse a trade without routing any order.
-            Switch to Alpaca Paper Trading when you're ready to submit to your paper account —
-            a useful final step before committing to a live strategy.
+            Run the full agent pipeline in safe analysis mode, simulate a controlled demo order,
+            or connect your own Alpaca paper account for real paper-trading execution.
+            Public users must provide their own Alpaca paper credentials before any paper order can be routed.
         </div>
     </div>
     """,
@@ -1205,45 +1237,120 @@ st.markdown(
 
 exec_col, conn_col = st.columns([1.15, 0.85])
 
+alpaca_credentials = None
+
 with exec_col:
     execution_mode = st.radio(
         "Execution mode",
-        options=["Dry Run Only", "Alpaca Paper Trading"],
+        options=["Analysis Only", "Demo Execution", "Alpaca Paper Trading"],
         index=0,
         horizontal=True,
-        help="Dry Run processes the full pipeline — market, news, strategy, risk — without placing an order. Alpaca Paper Trading routes approved orders to your Alpaca paper account in real time.",
+        help=(
+            "Analysis Only runs the agents without order routing. "
+            "Demo Execution simulates an order with a fake demo order ID. "
+            "Alpaca Paper Trading routes approved orders to the user's own Alpaca paper account."
+        ),
         key="main_execution_mode"
     )
 
-submit_paper_order = execution_mode == "Alpaca Paper Trading"
+    if execution_mode == "Alpaca Paper Trading":
+        st.markdown("#### Connect your Alpaca paper account")
 
-with exec_col:
-    if submit_paper_order:
+        with st.expander("How to get Alpaca paper API keys", expanded=False):
+            st.markdown(
+                """
+                1. Create or log in to your Alpaca account.
+                2. Switch to **Paper Trading**.
+                3. Open **API Keys**.
+                4. Copy your **Paper API Key** and **Paper Secret Key**.
+                5. Paste them below.
+                6. Do not use live trading keys.
+                """
+            )
+
+            st.link_button(
+                "Open Alpaca Paper Trading",
+                "https://app.alpaca.markets/brokerage/new-account"
+            )
+
+        alpaca_api_key = st.text_input(
+            "Alpaca Paper API Key",
+            type="password",
+            placeholder="Paste your Alpaca paper API key",
+            key="alpaca_api_key"
+        )
+
+        alpaca_secret_key = st.text_input(
+            "Alpaca Paper Secret Key",
+            type="password",
+            placeholder="Paste your Alpaca paper secret key",
+            key="alpaca_secret_key"
+        )
+
+        paper_confirmed = st.checkbox(
+            "I confirm these are Alpaca Paper Trading credentials, not live trading credentials.",
+            key="alpaca_paper_confirmed"
+        )
+
+        if alpaca_api_key and alpaca_secret_key and paper_confirmed:
+            alpaca_credentials = {
+                "api_key": alpaca_api_key.strip(),
+                "secret_key": alpaca_secret_key.strip(),
+                "base_url": "https://paper-api.alpaca.markets",
+            }
+            st.markdown(
+                '<div class="inline-status armed">⚡ <b>Alpaca paper execution armed.</b><br>'
+                'Approved orders will be routed to the Alpaca paper account connected for this browser session.</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                '<div class="inline-status armed">⚠️ <b>Alpaca paper execution not ready.</b><br>'
+                'Enter your paper API key, secret key and confirmation before routing can be enabled.</div>',
+                unsafe_allow_html=True
+            )
+
+    elif execution_mode == "Demo Execution":
         st.markdown(
-            '<div class="inline-status armed">⚡ <b>Paper execution armed.</b><br>Any order that clears risk review will be submitted to your Alpaca paper account.</div>',
+            '<div class="inline-status safe">🧪 <b>Demo execution active.</b><br>'
+            'The full pipeline will run and approved trades will generate a simulated demo order ID. '
+            'No Alpaca order will be placed.</div>',
             unsafe_allow_html=True
         )
+
     else:
         st.markdown(
-            '<div class="inline-status safe">🛡️ <b>Dry-run mode active.</b><br>The pipeline will price, analyse and risk-check the trade — no order will be placed.</div>',
+            '<div class="inline-status safe">🛡️ <b>Analysis-only mode active.</b><br>'
+            'The pipeline will price, analyse and risk-check the trade. No order will be placed.</div>',
             unsafe_allow_html=True
         )
+
+submit_paper_order = execution_mode == "Alpaca Paper Trading" and alpaca_credentials is not None
 
 with conn_col:
     st.markdown(
-        '<div class="info-card"><b>Alpaca account status</b><br>Verify your paper account is connected and has sufficient buying power before arming execution.</div>',
+        '<div class="info-card"><b>Alpaca account status</b><br>'
+        'Connection checks use the paper credentials entered in this session. '
+        'Nothing is checked until the user provides their own key and secret.</div>',
         unsafe_allow_html=True
     )
-    if st.button("Check Alpaca Connection", use_container_width=True, key="main_verify_alpaca"):
-        connection = check_alpaca_connection()
-        if connection["status"] == "connected":
-            st.success("Connected to Alpaca")
-            st.write(f"Account Status: {connection['account_status']}")
-            st.write(f"Buying Power: ${connection['buying_power']}")
-            st.write(f"Cash: ${connection['cash']}")
-        else:
-            st.error("Unable to reach Alpaca — check your API credentials.")
-            st.write(connection["message"])
+
+    if execution_mode == "Alpaca Paper Trading":
+        if st.button("Check Alpaca Connection", use_container_width=True, key="main_verify_alpaca"):
+            if not alpaca_credentials:
+                st.error("Enter your Alpaca paper API key and secret first.")
+            else:
+                connection = check_alpaca_connection(alpaca_credentials=alpaca_credentials)
+                if connection["status"] == "connected":
+                    st.success("Connected to Alpaca Paper")
+                    st.write(f"Account Status: {connection['account_status']}")
+                    st.write(f"Buying Power: ${connection['buying_power']}")
+                    st.write(f"Cash: ${connection['cash']}")
+                else:
+                    st.error("Unable to reach Alpaca Paper — check your credentials.")
+                    st.write(connection["message"])
+    else:
+        st.info("No Alpaca credentials needed for Analysis Only or Demo Execution.")
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -1265,33 +1372,30 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-    if submit_paper_order:
+    if execution_mode == "Alpaca Paper Trading" and alpaca_credentials:
         st.markdown(
-            '<div class="mode-banner armed">⚡ <b>Paper execution armed.</b><br>Approved orders will be routed to Alpaca paper trading.</div>',
+            '<div class="mode-banner armed">⚡ <b>Alpaca paper execution armed.</b><br>'
+            'Approved orders will be routed using the paper credentials entered for this session.</div>',
+            unsafe_allow_html=True
+        )
+    elif execution_mode == "Alpaca Paper Trading":
+        st.markdown(
+            '<div class="mode-banner armed">⚠️ <b>Alpaca credentials required.</b><br>'
+            'Enter paper API credentials on the main page before routing can be enabled.</div>',
+            unsafe_allow_html=True
+        )
+    elif execution_mode == "Demo Execution":
+        st.markdown(
+            '<div class="mode-banner safe">🧪 <b>Demo execution active.</b><br>'
+            'Approved orders will be simulated only. No Alpaca order will be placed.</div>',
             unsafe_allow_html=True
         )
     else:
         st.markdown(
-            '<div class="mode-banner safe">🛡️ <b>Dry-run mode active.</b><br>The full pipeline runs without placing any orders.</div>',
+            '<div class="mode-banner safe">🛡️ <b>Analysis-only mode active.</b><br>'
+            'The full pipeline runs without placing any orders.</div>',
             unsafe_allow_html=True
         )
-
-    st.markdown('<div class="sb-sec">Connectivity</div>', unsafe_allow_html=True)
-
-    if st.button("Verify Alpaca Connection", use_container_width=True, key="sidebar_verify_alpaca"):
-        connection = check_alpaca_connection()
-        if connection["status"] == "connected":
-            st.success("Connected to Alpaca")
-            st.write(f"Account Status: {connection['account_status']}")
-            st.write(f"Buying Power: ${connection['buying_power']}")
-            st.write(f"Cash: ${connection['cash']}")
-        else:
-            st.error("Unable to reach Alpaca — check your API credentials.")
-            st.write(connection["message"])
-
-    st.markdown('<div class="sb-sec">Sample Instructions</div>', unsafe_allow_html=True)
-    for q in ["Buy 10 AAPL at market", "Should I buy Nvidia today?", "Analyse Microsoft fundamentals", "Buy 100 Tesla at market"]:
-        st.code(q)
 
     st.markdown('<div class="sb-sec">Recent Runs</div>', unsafe_allow_html=True)
     recent_runs = get_recent_workflow_runs(limit=5)
@@ -1367,7 +1471,9 @@ if run_button:
         with st.spinner("Running market data, news sentiment, strategy, risk and execution agents…"):
             workflow_result = run_broker_workflow(
                 query=query,
-                submit_paper_order=submit_paper_order
+                execution_mode=execution_mode,
+                submit_paper_order=submit_paper_order,
+                alpaca_credentials=alpaca_credentials
             )
             run_id = save_workflow_run(workflow_result)
             workflow_result["database_run_id"] = run_id
@@ -1716,8 +1822,14 @@ if workflow_result:
                 st.write(f"**Submitted At:** {execution_data.get('submitted_at')}")
             if execution_data.get("order_status") in ["accepted", "new"]:
                 st.info("Order accepted and queued — it will remain pending until the US equity session opens.")
-        elif execution_result["status"] == "disabled":
-            st.info(execution_data.get("reason", "Execution is currently in dry-run mode."))
+        elif execution_result["status"] in ["disabled", "not_routed"]:
+            st.info(execution_data.get("reason", "Execution is currently in analysis-only mode."))
+        elif execution_result["status"] == "simulated":
+            st.success("✦ Demo order simulated successfully. No Alpaca order was placed.")
+            st.write(f"**Demo Order ID:** {execution_data.get('order_id')}")
+            st.write(f"**Ticker:** {execution_data.get('ticker')}")
+            st.write(f"**Side:** {execution_data.get('side')}")
+            st.write(f"**Quantity:** {execution_data.get('quantity')}")
         elif execution_result["status"] == "blocked":
             st.warning(execution_data.get("reason", "Order blocked by pre-trade risk controls."))
         else:
@@ -1763,8 +1875,8 @@ else:
         <div class="info-card">
             <b>Ready.</b> Enter a trade instruction above and press
             <em>✦ Run Trading Workflow</em> to launch the pipeline.
-            Keep <b>Dry Run Only</b> selected while exploring ideas —
-            switch to <b>Alpaca Paper Trading</b> only when you want a real paper order submitted.
+            Use <b>Analysis Only</b> for safe research, <b>Demo Execution</b> for simulated order routing,
+            or <b>Alpaca Paper Trading</b> after entering your own paper credentials.
         </div>
         """,
         unsafe_allow_html=True
