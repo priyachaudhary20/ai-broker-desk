@@ -32,7 +32,7 @@ def transcribe_audio(audio_file) -> dict:
         return {
             "status": "error",
             "text": "",
-            "summary": "Voice transcription failed. The speech was not clear enough.",
+            "summary": "Voice transcription failed. Please try again.",
         }
 
     except sr.RequestError as e:
