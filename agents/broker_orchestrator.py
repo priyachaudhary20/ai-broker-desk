@@ -8,20 +8,20 @@ from agents.risk_agent import run_risk_agent
 from agents.execution_agent import run_execution_agent
 
 
-def build_disabled_execution_result(reason: str) -> dict:
+def build_disabled_execution_result(reason: str, execution_mode: str = "Analysis Only") -> dict:
     return {
         "agent": "Execution Agent",
-        "status": "disabled",
-        "summary": "Execution Agent held the ticket because paper execution is disabled for this run.",
+        "status": "not_routed",
+        "summary": "Execution Agent did not route an order for this run.",
         "data": {
-            "execution_mode": "Alpaca Paper Trading",
-            "order_status": "Not Submitted",
+            "execution_mode": execution_mode,
+            "order_status": "Not Routed",
             "reason": reason,
         },
     }
 
 
-def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
+def run_broker_workflow(query: str, execution_mode: str = "Analysis Only", submit_paper_order: bool = False, alpaca_credentials: dict | None = None,) -> dict:
     """
     Broker Orchestrator coordinates the full AI Broker Desk workflow.
 
@@ -48,7 +48,7 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
 
     add_audit_event(
         audit_log,
-        f"Instruction normalised as {side} {requested_quantity} shares of {ticker}."
+        f"Execution mode selected: {execution_mode}."
     )
 
     market_result = run_market_agent(ticker)
@@ -116,8 +116,46 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
             "Risk Agent was held because no valid strategy decision was available for review."
         )
 
-    if submit_paper_order:
-        execution_result = run_execution_agent(risk_result["data"])
+    if execution_mode == "Analysis Only":
+        execution_result = build_disabled_execution_result(
+            "Analysis Only mode prevents order submission.",
+            execution_mode=execution_mode,
+        )
+        add_audit_event(
+            audit_log,
+            "Execution Agent was held because Analysis Only mode is active."
+        )
+
+    elif execution_mode == "Demo Execution":
+        execution_result = run_execution_agent(
+            risk_result=risk_result,
+            execution_mode=execution_mode,
+            alpaca_credentials=None,
+        )
+
+        if execution_result["status"] == "simulated":
+            demo_order_id = execution_result["data"].get("order_id", "Unknown")
+            add_audit_event(
+                audit_log,
+                f"Execution Agent simulated a demo order. Demo Order ID: {demo_order_id}."
+            )
+        elif execution_result["status"] == "blocked":
+            add_audit_event(
+                audit_log,
+                "Execution Agent did not simulate the order because execution conditions were not satisfied."
+            )
+        else:
+            add_audit_event(
+                audit_log,
+                "Execution Agent encountered an issue while simulating the demo order."
+            )
+
+    elif execution_mode == "Alpaca Paper Trading" and submit_paper_order:
+        execution_result = run_execution_agent(
+            risk_result=risk_result,
+            execution_mode=execution_mode,
+            alpaca_credentials=alpaca_credentials,
+        )
 
         if execution_result["status"] == "complete":
             order_status = execution_result["data"].get("order_status", "Unknown")
@@ -128,10 +166,10 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
                 f"Execution Agent routed Alpaca paper order. Venue status: {order_status}. Order ID: {order_id}."
             )
 
-            if order_status in ["accepted", "new"]:
+            if order_status in ["accepted", "new", "pending_new"]:
                 add_audit_event(
                     audit_log,
-                    "Alpaca accepted the paper order. The order may remain queued until the US market session opens."
+                    "Alpaca accepted the paper order. The order may remain queued or pending depending on market session state."
                 )
 
         elif execution_result["status"] == "blocked":
@@ -145,23 +183,35 @@ def run_broker_workflow(query: str, submit_paper_order: bool = False) -> dict:
                 "Execution Agent encountered an issue while processing the Alpaca paper order."
             )
 
-    else:
+    elif execution_mode == "Alpaca Paper Trading":
         execution_result = build_disabled_execution_result(
-            "Paper execution is disabled. Enable Alpaca paper execution from the sidebar before routing an order."
+            "Alpaca Paper Trading requires valid paper credentials before routing can be enabled.",
+            execution_mode=execution_mode,
         )
         add_audit_event(
             audit_log,
-            "Execution Agent was held because paper execution is disabled in the sidebar."
+            "Execution Agent was held because Alpaca paper credentials were not provided."
+        )
+
+    else:
+        execution_result = build_disabled_execution_result(
+            "Unknown execution mode selected.",
+            execution_mode=execution_mode,
+        )
+        add_audit_event(
+            audit_log,
+            "Execution Agent was held because the selected execution mode was not recognised."
         )
 
     final_decision = {
         "ticker": ticker,
         "side": side,
         "requested_quantity": requested_quantity,
+        "execution_mode": execution_mode,
         "strategy_signal": strategy_result["data"].get("signal", "HOLD"),
         "confidence": strategy_result["data"].get("confidence", 50),
         "risk_approval": risk_result["data"].get("approval", "Blocked"),
-        "execution_status": execution_result["data"].get("order_status", "Not Submitted"),
+        "execution_status": execution_result["data"].get("order_status", "Not Routed"),
     }
 
     add_audit_event(audit_log, "Broker workflow completed and final decision summary generated.")

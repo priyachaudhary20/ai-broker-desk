@@ -1,5 +1,3 @@
-import streamlit as st
-
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -11,10 +9,16 @@ def enum_to_text(value):
 
     return str(value)
 
+def get_trading_client(alpaca_credentials=None) -> TradingClient:
+    if alpaca_credentials:
+        api_key = alpaca_credentials.get("api_key")
+        api_secret = alpaca_credentials.get("secret_key")
+    else:
+        api_key = st.secrets["ALPACA_API_KEY"]
+        api_secret = st.secrets["ALPACA_API_SECRET"]
 
-def get_trading_client() -> TradingClient:
-    api_key = st.secrets["ALPACA_API_KEY"]
-    api_secret = st.secrets["ALPACA_API_SECRET"]
+    if not api_key or not api_secret:
+        raise ValueError("Alpaca Paper API Key and Secret Key are required.")
 
     return TradingClient(
         api_key,
@@ -23,9 +27,9 @@ def get_trading_client() -> TradingClient:
     )
 
 
-def check_alpaca_connection() -> dict:
+def check_alpaca_connection(alpaca_credentials=None) -> dict:
     try:
-        client = get_trading_client()
+        client = get_trading_client(alpaca_credentials=alpaca_credentials)
         account = client.get_account()
 
         return {
@@ -39,19 +43,18 @@ def check_alpaca_connection() -> dict:
     except Exception as e:
         return {
             "status": "error",
-            "message": str(e),
+            "message": f"Alpaca paper trading connection could not be established: {str(e)}",
         }
 
-
-def submit_paper_market_order(symbol: str, qty: int, side: str) -> dict:
-    client = get_trading_client()
+def submit_paper_market_order(symbol: str, qty: int, side: str, alpaca_credentials: dict | None = None,) -> dict:
+    client = get_trading_client(alpaca_credentials)
 
     if side.upper() == "BUY":
         order_side = OrderSide.BUY
     elif side.upper() == "SELL":
         order_side = OrderSide.SELL
     else:
-        raise ValueError("Order side must be BUY or SELL.")
+        raise ValueError("Order side must be BUY or SELL before routing to Alpaca.")
 
     order_data = MarketOrderRequest(
         symbol=symbol,
