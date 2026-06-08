@@ -2,8 +2,6 @@
 
 A Streamlit-based AI broker desk that turns a plain English trading instruction into market analysis, news sentiment, strategy scoring, risk review and optional Alpaca paper trading.
 
-Live app: https://ai-broker-desk.streamlit.app/
-
 ## Overview
 
 Intelligent Broker Desk demonstrates how a broker-style workflow can move from research to controlled execution.
