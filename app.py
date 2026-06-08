@@ -1,11 +1,12 @@
 import html
+from datetime import datetime
+
 import pandas as pd
 import streamlit as st
 import yfinance as yf
 
 from agents.broker_orchestrator import run_broker_workflow
 from brokers.alpaca_client import check_alpaca_connection
-from database.trade_history import save_workflow_run, get_recent_workflow_runs
 from utils.voice import transcribe_audio
 
 st.set_page_config(
@@ -14,6 +15,12 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Private per-browser run history.
+# Do not use the SQLite audit/history database for public UI history,
+# otherwise one visitor can see another visitor's runs.
+if "session_run_history" not in st.session_state:
+    st.session_state["session_run_history"] = []
 
 st.markdown(
     """
@@ -1398,20 +1405,23 @@ with st.sidebar:
         )
 
     st.markdown('<div class="sb-sec">Recent Runs</div>', unsafe_allow_html=True)
-    recent_runs = get_recent_workflow_runs(limit=5)
+
+    recent_runs = st.session_state.get("session_run_history", [])[:5]
+
     if recent_runs:
         for run in recent_runs:
-            sig = run['strategy_signal']
-            dot_col = "#7aad8f" if sig in ("BUY","STRONG_BUY") else "#c96b7a" if sig == "SELL" else "#b8a9d9"
+            sig = run.get("strategy_signal", "HOLD")
+            dot_col = "#7aad8f" if sig in ("BUY", "STRONG_BUY") else "#c96b7a" if sig == "SELL" else "#b8a9d9"
+
             st.markdown(
                 f"""<div class="run-row">
                     <div class="run-dot" style="background:{dot_col}"></div>
-                    <span><b>#{run['id']}</b> · {run['ticker']} · {sig} · {run['execution_status']}</span>
+                    <span><b>#{run.get('session_run_id')}</b> · {run.get('ticker')} · {sig} · {run.get('execution_status')}</span>
                 </div>""",
                 unsafe_allow_html=True
             )
     else:
-        st.caption("No runs recorded yet — submit an instruction to get started.")
+        st.caption("No runs in this browser session yet.")
 
 # ── Request input ──────────────────────────────────────────────────────────────
 sec_div("Trade Instruction")
@@ -1475,10 +1485,39 @@ if run_button:
                 submit_paper_order=submit_paper_order,
                 alpaca_credentials=alpaca_credentials
             )
-            run_id = save_workflow_run(workflow_result)
-            workflow_result["database_run_id"] = run_id
+            session_run_id = len(st.session_state["session_run_history"]) + 1
+            workflow_result["session_run_id"] = session_run_id
             st.session_state["workflow_result"] = workflow_result
-            st.success(f"✦ Pipeline complete — saved as Run #{run_id}")
+
+            parsed_request = workflow_result.get("parsed_request", {})
+            final_decision = workflow_result.get("final_decision", {})
+            agents = workflow_result.get("agents", {})
+
+            risk_data = agents.get("risk", {}).get("data", {})
+            execution_data = agents.get("execution", {}).get("data", {})
+
+            st.session_state["session_run_history"].insert(
+                0,
+                {
+                    "session_run_id": session_run_id,
+                    "timestamp": datetime.now().strftime("%d %b %Y, %H:%M"),
+                    "query": query,
+                    "ticker": parsed_request.get("ticker", "N/A"),
+                    "side": parsed_request.get("side", "N/A"),
+                    "requested_quantity": parsed_request.get("requested_quantity", "N/A"),
+                    "approved_quantity": risk_data.get("approved_quantity", 0),
+                    "strategy_signal": final_decision.get("strategy_signal", "N/A"),
+                    "confidence": final_decision.get("confidence", "N/A"),
+                    "risk_approval": final_decision.get("risk_approval", "N/A"),
+                    "risk_level": risk_data.get("risk_level", "N/A"),
+                    "execution_status": final_decision.get("execution_status", "N/A"),
+                    "order_id": execution_data.get("order_id", ""),
+                },
+            )
+
+            st.session_state["session_run_history"] = st.session_state["session_run_history"][:20]
+
+            st.success(f"✦ Pipeline complete — saved to this session as Run #{session_run_id}")
 
 # ── Results ────────────────────────────────────────────────────────────────────
 workflow_result = st.session_state.get("workflow_result")
@@ -1749,7 +1788,7 @@ if workflow_result:
                 font-size:0.6rem;color:var(--ink-light);margin-bottom:5px">
                 <span>{lbl}</span><span>{pct}/100</span>
               </div>
-              <div style="background:var(--lav-pale);border-radius:999px;height:9px;overflow:hidden">
+              <div style="background:var(--blue-soft);border-radius:999px;height:9px;overflow:hidden">
                 <div style="height:100%;width:{pct}%;background:{col};border-radius:999px;
                   animation:barGrowX 1s cubic-bezier(.4,0,.2,1) {i*0.15}s forwards;
                   transform:scaleX(0);transform-origin:left"></div>
@@ -1786,7 +1825,7 @@ if workflow_result:
             <div style="margin:1rem 0">
               <div style="font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:var(--ink-light);
                 margin-bottom:6px;letter-spacing:0.1em;text-transform:uppercase">Composite Risk Score</div>
-              <div style="background:var(--lav-pale);border-radius:999px;height:12px;overflow:hidden">
+              <div style="background:var(--blue-soft);border-radius:999px;height:12px;overflow:hidden">
                 <div style="height:100%;width:{rscore}%;background:{risk_col};border-radius:999px;
                   animation:barGrowX 1.2s cubic-bezier(.4,0,.2,1) forwards;
                   transform:scaleX(0);transform-origin:left"></div>
@@ -1845,25 +1884,37 @@ if workflow_result:
             st.info("No audit events recorded for this run.")
 
     with tab_history:
-        st.subheader("Run History")
-        history_rows = get_recent_workflow_runs(limit=20)
+        st.subheader("Session History")
+
+        history_rows = st.session_state.get("session_run_history", [])
+
         if history_rows:
             history_df = pd.DataFrame(history_rows)
+
             display_df = history_df.rename(columns={
-                "id": "Run ID", "created_at": "Timestamp", "query": "Instruction",
-                "ticker": "Ticker", "side": "Side", "requested_quantity": "Requested Qty",
-                "approved_quantity": "Approved Qty", "strategy_signal": "Signal",
-                "confidence": "Conviction", "risk_approval": "Risk Decision",
-                "risk_level": "Risk Level", "execution_status": "Execution Status",
+                "session_run_id": "Run ID",
+                "timestamp": "Timestamp",
+                "query": "Instruction",
+                "ticker": "Ticker",
+                "side": "Side",
+                "requested_quantity": "Requested Qty",
+                "approved_quantity": "Approved Qty",
+                "strategy_signal": "Signal",
+                "confidence": "Conviction",
+                "risk_approval": "Risk Decision",
+                "risk_level": "Risk Level",
+                "execution_status": "Execution Status",
                 "order_id": "Order ID",
             })
+
             st.dataframe(display_df, use_container_width=True, hide_index=True)
+
             st.info(
-                "Runs are stored locally in SQLite. Order IDs appear only when paper execution "
-                "is enabled and Alpaca confirms the submission."
+                "This history is private to the current browser session. "
+                "Other public users cannot see these runs."
             )
         else:
-            st.info("No run history yet — submit your first instruction above.")
+            st.info("No runs in this browser session yet — submit your first instruction above.")
 
     with tab_raw:
         st.subheader("Raw Pipeline Output")
